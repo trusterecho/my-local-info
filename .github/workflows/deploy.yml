@@ -4,9 +4,17 @@ on:
   push:
     branches:
       - main
+  schedule:
+    - cron: '0 22 * * *'  # 매일 UTC 22시 = 한국시간 오전 7시
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  deploy:
+  # push 트리거: 빌드와 배포만 실행
+  deploy-only:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -19,6 +27,49 @@ jobs:
 
       - name: Install Dependencies
         run: npm ci
+
+      - name: Build Project
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        run: npx wrangler pages deploy out --project-name=my-local-info
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # schedule / workflow_dispatch 트리거: 스크립트 실행 + 커밋 + 빌드 + 배포
+  fetch-generate-deploy:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Fetch Public Data
+        run: node scripts/fetch-public-data.js
+        env:
+          PUBLIC_DATA_API_KEY: ${{ secrets.PUBLIC_DATA_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Generate Blog Post
+        run: node scripts/generate-blog-post.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Commit and Push Changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || (git commit -m "자동 업데이트: 공공데이터 수집 및 블로그 글 생성" && git push)
 
       - name: Build Project
         run: npm run build

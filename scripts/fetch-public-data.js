@@ -58,13 +58,16 @@ async function main() {
     }
 
     // [2단계] 기존 데이터와 비교
-    let existingData = [];
+    // local-info.json은 { events: [...], benefits: [...], lastUpdated: "..." } 구조
+    let existingData = { events: [], benefits: [], lastUpdated: "" };
     if (fs.existsSync(DATA_FILE_PATH)) {
         const fileContent = fs.readFileSync(DATA_FILE_PATH, 'utf-8');
         existingData = JSON.parse(fileContent);
     }
 
-    const existingNames = new Set(existingData.map(item => item.name));
+    // 기존 항목들의 제목(title)을 모아서 중복 체크용 Set 생성
+    const allExistingItems = [...(existingData.events || []), ...(existingData.benefits || [])];
+    const existingNames = new Set(allExistingItems.map(item => item.title));
     
     const newItems = filteredItems.filter(item => !existingNames.has(item['서비스명']));
 
@@ -78,7 +81,7 @@ async function main() {
 
     // [3단계] Gemini AI로 새 항목 가공
     const prompt = "아래 공공데이터 1건을 분석해서 JSON 객체로 변환해줘. 형식:\n" +
-                   "{id: 숫자, name: 서비스명, category: '행사' 또는 '혜택', startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD', location: 장소 또는 기관명, target: 지원대상, summary: 한줄요약, link: 상세URL}\n" +
+                   "{id: 문자열, title: 서비스명, category: '행사' 또는 '혜택', startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD', location: 장소 또는 기관명, target: 지원대상, summary: 한줄요약, link: 상세URL}\n" +
                    "category는 내용을 보고 행사/축제면 '행사', 지원금/서비스면 '혜택'으로 판단해.\n" +
                    "startDate가 없으면 오늘 날짜, endDate가 없으면 '상시'로 넣어.\n" +
                    "반드시 JSON 객체만 출력해. 다른 텍스트 없이.\n\n" +
@@ -106,11 +109,22 @@ async function main() {
     
     const processedItem = JSON.parse(responseText);
 
-    // ID 보정 (만약 id가 중복되거나 이상하면 새로 부여)
-    processedItem.id = existingData.length > 0 ? Math.max(...existingData.map(d => d.id)) + 1 : 1;
+    // ID 보정: 카테고리에 맞는 접두사 부여 (e4, b3 등)
+    const category = processedItem.category;
 
     // [4단계] 기존 데이터에 추가
-    existingData.push(processedItem);
+    if (category === '행사') {
+        processedItem.id = `e${(existingData.events || []).length + 1}`;
+        existingData.events = existingData.events || [];
+        existingData.events.push(processedItem);
+    } else {
+        processedItem.id = `b${(existingData.benefits || []).length + 1}`;
+        existingData.benefits = existingData.benefits || [];
+        existingData.benefits.push(processedItem);
+    }
+
+    // 날짜 갱신
+    existingData.lastUpdated = new Date().toISOString().split('T')[0];
 
     // 저장 공간 디렉토리 존재 확인
     const dir = path.dirname(DATA_FILE_PATH);
@@ -119,7 +133,7 @@ async function main() {
     }
 
     fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(existingData, null, 2), 'utf-8');
-    console.log("새로운 데이터 추가 성공:", processedItem.name);
+    console.log("새로운 데이터 추가 성공:", processedItem.title);
 
   } catch (error) {
     console.error("에러 발생:", error.message);
