@@ -166,7 +166,7 @@ function Card({ item, type }: { item: InfoItem; type: "event" | "benefit" }) {
       </div>
 
       <Link 
-        href={`/${isEvent ? 'events' : 'benefits'}/${item.id}`}
+        href="/blog"
         className={`mt-6 block text-center py-3 border font-mono text-sm tracking-widest transition-all relative z-10 uppercase ${buttonTheme}`}
       >
         Access Data
